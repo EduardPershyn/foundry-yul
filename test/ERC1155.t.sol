@@ -121,6 +121,14 @@ contract ERC1155Test is DSTestPlus, ERC1155TokenReceiver {
         uint256 amount
     );
 
+    event TransferBatch(
+        address indexed operator,
+        address indexed from,
+        address indexed to,
+        uint256[] ids,
+        uint256[] amounts
+    );
+
     YulDeployer yulDeployer = new YulDeployer();
     MockERC1155 token;
 
@@ -133,7 +141,7 @@ contract ERC1155Test is DSTestPlus, ERC1155TokenReceiver {
     }
 
     function testMintToEOA() public {
-        hevm.expectEmit(false, false, false, false);
+        hevm.expectEmit(true, true, true, true);
         emit TransferSingle(address(this), address(0x00), address(0xBEEF), 1337, 1);
 
         token.mint(address(0xBEEF), 1337, 1, "");
@@ -168,6 +176,9 @@ contract ERC1155Test is DSTestPlus, ERC1155TokenReceiver {
         amounts[2] = 300;
         amounts[3] = 400;
         amounts[4] = 500;
+
+        hevm.expectEmit(true, true, true, true);
+        emit TransferBatch(address(this), address(0x00), address(0xBEEF), ids, amounts);
 
         token.batchMint(address(0xBEEF), ids, amounts, "");
 
@@ -241,6 +252,9 @@ contract ERC1155Test is DSTestPlus, ERC1155TokenReceiver {
         burnAmounts[4] = 250;
 
         token.batchMint(address(0xBEEF), ids, mintAmounts, "");
+
+        hevm.expectEmit(true, true, true, true);
+        emit TransferBatch(address(this), address(0xBEEF), address(0x00), ids, burnAmounts);
 
         token.batchBurn(address(0xBEEF), ids, burnAmounts);
 

@@ -28,11 +28,13 @@ object "ERC1155Yul" {
                 returnEmpty()
             }
             case 0xb48ab8b6 /* "batchMint(address,uint256[] memory,uint256[] memory,bytes memory)" */ {
-                batchMint(decodeAsAddress(0), decodeAsMemArray(1), decodeAsMemArray(2), decodeAsUint(3))
+                let ids, amounts := decodeTwoMemArrays(1, 2)
+                batchMint(decodeAsAddress(0), ids, amounts, decodeAsUint(3))
                 returnEmpty()
             }
             case 0xf6eb127a /* "batchBurn(address,uint256[] memory,uint256[] memory)" */ {
-                batchBurn(decodeAsAddress(0), decodeAsMemArray(1), decodeAsMemArray(2))
+                let ids, amounts := decodeTwoMemArrays(1, 2)
+                batchBurn(decodeAsAddress(0), ids, amounts)
                 returnEmpty()
             }
             default {
@@ -161,6 +163,26 @@ object "ERC1155Yul" {
 
                 arrayMemPos := arrayMemStart
             }
+            function decodeTwoMemArrays(offset1, offset2) -> array1Pos, array2Pos {
+                let arrayCdPos1 := decodeAsCdArray(offset1)
+                let length1 := calldataload(arrayCdPos1)
+                let arrayCdPos2 := decodeAsCdArray(offset2)
+                let length2 := calldataload(arrayCdPos2)
+
+                array1Pos := mload(0x40) //take freeMemPtr
+                //store first array location in memory
+                mstore(array1Pos, 0x40)
+                //store second array location in memory
+                let array2DataPos := add( 0x40, mul(length1, 0x20))
+                array2Pos := add(array1Pos, 0x20)
+                mstore(array2Pos, array2DataPos)
+
+                let arraysMemSize := add(0x80, mul( 0x20, add(length1,length2) ))
+                mstore(0x40, add(array1Pos, arraysMemSize))         //update freeMemPtr
+
+                calldatacopy(add(array1Pos, 0x40), arrayCdPos1, add( 0x20, mul(0x20,length1) ))
+                calldatacopy(add(array2Pos, array2DataPos), arrayCdPos2, add( 0x20, mul(0x20,length2) ))
+            }
 
             /* ---------- calldata encoding functions ---------- */
             function returnUint(v) {
@@ -184,19 +206,15 @@ object "ERC1155Yul" {
                 // cast sig-event "TransferBatch(address indexed,address indexed,address indexed,uint256[],uint256[])"
                 let signatureHash := 0x4a39dc06d4c0dbc64b70af90fd698a233a518aa5d07e595d983b8c0526c8f7fb
 
-                // Assume arrays are already coupled in memory
-                let idsPtr := add(ids, 0x20)
-                let amountsPtr := add(amounts, 0x20)
-                let idsL := mload(idsPtr)
-                let amountsL := mload(amountsPtr)
+                let amountsDataPos := mload(amounts)
 
-                let size := add( 0x80, mul( add(idsL, amountsL), 0x20 ) )
-                if lt(ids, amounts) {
-                    log4(ids, size, signatureHash, operator, from, to)
-                }
-                if lt(amounts, ids) {
-                    log4(amounts, size, signatureHash, operator, from, to)
-                }
+                let idsL := mload( add(ids, mload(ids)) )
+                let amountsL := mload( add(amounts, amountsDataPos) )
+                let memSize := add( 0x80, mul( add(idsL, amountsL), 0x20 ) )
+
+                mstore(amounts, add(amountsDataPos, 0x20) ) //make relative to first (ids) array
+                log4(ids, memSize, signatureHash, operator, from, to)
+                mstore(amounts, amountsDataPos) //restore memory
             }
 
             /* -------- storage layout ---------- */
