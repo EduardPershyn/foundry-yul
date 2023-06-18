@@ -27,6 +27,14 @@ object "ERC1155Yul" {
                 burn(decodeAsAddress(0), decodeAsUint(1), decodeAsUint(2))
                 returnEmpty()
             }
+            case 0xb48ab8b6 /* "batchMint(address,uint256[] memory,uint256[] memory,bytes memory)" */ {
+                batchMint(decodeAsAddress(0), decodeAsMemArray(1), decodeAsMemArray(2), decodeAsUint(3))
+                returnEmpty()
+            }
+            case 0xf6eb127a /* "batchBurn(address,uint256[] memory,uint256[] memory)" */ {
+                batchBurn(decodeAsAddress(0), decodeAsMemArray(1), decodeAsMemArray(2))
+                returnEmpty()
+            }
             default {
                 revert(0, 0)
             }
@@ -69,6 +77,44 @@ object "ERC1155Yul" {
 
                 emitTransferSingle(caller(), from, 0x0, id, amount)
             }
+            function batchMint(to, ids, amounts, data) {
+                requireRecipient(iszero(eq(to, 0x00)))
+
+                let idsPtr := add(ids, mload(ids))
+                let amountsPtr := add(amounts, mload(amounts))
+
+                let idsL := mload(idsPtr)
+                let amountsL := mload(amountsPtr)
+                requireLength(eq(amountsL, idsL))
+
+                for { let i := 0 } lt(i, idsL) { i := add(i, 1) }
+                {
+                    idsPtr := add(idsPtr, 0x20)
+                    amountsPtr := add(amountsPtr, 0x20)
+                    addToBalance(to, mload(idsPtr), mload(amountsPtr))
+                }
+
+                emitTransferBatch(caller(), 0x0, to, ids, amounts)
+            }
+            function batchBurn(from, ids, amounts) {
+                requireRecipient(iszero(eq(from, 0x00)))
+
+                let idsPtr := add(ids, mload(ids))
+                let amountsPtr := add(amounts, mload(amounts))
+
+                let idsL := mload(idsPtr)
+                let amountsL := mload(amountsPtr)
+                requireLength(eq(amountsL, idsL))
+
+                for { let i := 0 } lt(i, idsL) { i := add(i, 1) }
+                {
+                    idsPtr := add(idsPtr, 0x20)
+                    amountsPtr := add(amountsPtr, 0x20)
+                    deductFromBalance(from, mload(idsPtr), mload(amountsPtr))
+                }
+
+                emitTransferBatch(caller(), from, 0x0, ids, amounts)
+            }
 
             /* ---------- memory operations functions ----------- */
             function initMemArray(length) -> freeMPtr, arrayMemSize {
@@ -106,6 +152,15 @@ object "ERC1155Yul" {
                     revert(0, 0)
                 }
             }
+            function decodeAsMemArray(offset) -> arrayMemPos {
+                let arrayCdPos := decodeAsCdArray(offset)
+                let length := calldataload(arrayCdPos)
+
+                let arrayMemStart, arrayMemSize := initMemArray(length)
+                calldatacopy(add(arrayMemStart, 0x20), arrayCdPos, arrayMemSize)
+
+                arrayMemPos := arrayMemStart
+            }
 
             /* ---------- calldata encoding functions ---------- */
             function returnUint(v) {
@@ -124,6 +179,24 @@ object "ERC1155Yul" {
                 mstore(0x00, id)
                 mstore(0x20, amount)
                 log4(0, 0x40, signatureHash, operator, from, to)
+            }
+            function emitTransferBatch(operator, from, to, ids, amounts) {
+                // cast sig-event "TransferBatch(address indexed,address indexed,address indexed,uint256[],uint256[])"
+                let signatureHash := 0x4a39dc06d4c0dbc64b70af90fd698a233a518aa5d07e595d983b8c0526c8f7fb
+
+                // Assume arrays are already coupled in memory
+                let idsPtr := add(ids, 0x20)
+                let amountsPtr := add(amounts, 0x20)
+                let idsL := mload(idsPtr)
+                let amountsL := mload(amountsPtr)
+
+                let size := add( 0x80, mul( add(idsL, amountsL), 0x20 ) )
+                if lt(ids, amounts) {
+                    log4(ids, size, signatureHash, operator, from, to)
+                }
+                if lt(amounts, ids) {
+                    log4(amounts, size, signatureHash, operator, from, to)
+                }
             }
 
             /* -------- storage layout ---------- */
