@@ -43,6 +43,15 @@ object "ERC1155Yul" {
                 setApprovalForAll(decodeAsAddress(0), decodeAsUint(1))
                 returnEmpty()
             }
+            case 0xf242432a /* "safeTransferFrom(address, address, uint256, uint256, bytes calldata)" */ {
+                safeTransferFrom(decodeAsAddress(0), decodeAsAddress(1), decodeAsUint(2), decodeAsUint(3), decodeAsUint(4))
+                returnEmpty()
+            }
+            case 0x2eb2c2d6 /* "safeBatchTransferFrom(address, address, uint256[] calldata, uint256[] calldata, bytes calldata)" */ {
+                let ids, amounts := decodeTwoMemArrays(2, 3)
+                safeBatchTransferFrom(decodeAsAddress(0), decodeAsAddress(1), ids, amounts, decodeAsUint(4))
+                returnEmpty()
+            }
             default {
                 revert(0, 0)
             }
@@ -105,7 +114,7 @@ object "ERC1155Yul" {
                 emitTransferBatch(caller(), 0x0, to, ids, amounts)
             }
             function batchBurn(from, ids, amounts) {
-                requireRecipient(iszero(eq(from, 0x00)))
+                require(iszero(eq(from, 0x00)))
 
                 let idsPtr := add(ids, mload(ids))
                 let amountsPtr := add(amounts, mload(amounts))
@@ -130,6 +139,37 @@ object "ERC1155Yul" {
                 sstore(isApprovedStorageOffset(caller(), operator), approved)
 
                 emitApprovalForAll(caller(), operator, approved)
+            }
+            function safeTransferFrom(from, to, id, amount, data) {
+                requireRecipient(iszero(eq(to, 0x00)))
+                requireNotAuth(or( eq(caller(), from), isApprovedForAll(from, caller()) ))
+
+                deductFromBalance(from, id, amount)
+                addToBalance(to, id, amount)
+
+                emitTransferSingle(caller(), from, to, id, amount)
+            }
+            function safeBatchTransferFrom(from, to, ids, amounts, data) {
+                requireRecipient(iszero(eq(to, 0x00)))
+                requireNotAuth(or( eq(caller(), from), isApprovedForAll(from, caller()) ))
+
+                let idsPtr := add(ids, mload(ids))
+                let amountsPtr := add(amounts, mload(amounts))
+
+                let idsL := mload(idsPtr)
+                let amountsL := mload(amountsPtr)
+                requireLength(eq(amountsL, idsL))
+
+                for { let i := 0 } lt(i, idsL) { i := add(i, 1) }
+                {
+                    idsPtr := add(idsPtr, 0x20)
+                    amountsPtr := add(amountsPtr, 0x20)
+
+                    deductFromBalance(from, mload(idsPtr), mload(amountsPtr))
+                    addToBalance(to, mload(idsPtr), mload(amountsPtr))
+                }
+
+                emitTransferBatch(caller(), from, to, ids, amounts)
             }
 
             /* ---------- memory operations functions ----------- */
@@ -305,6 +345,18 @@ object "ERC1155Yul" {
 
                     mstore(0x00, 0x20)
                     mstore(0x20, 0x0F)
+                    mstore(0x40, message)
+                    revert(0x00, 0x60)
+                }
+            }
+            function requireNotAuth(condition) {
+                if iszero(condition) {
+                    //cast --from-utf8 "NOT_AUTHORIZED"
+                    //cast --to-bytes32 0x4e4f545f415554484f52495a4544
+                    let message := 0x4e4f545f415554484f52495a4544000000000000000000000000000000000000
+
+                    mstore(0x00, 0x20)
+                    mstore(0x20, 0x0E)
                     mstore(0x40, message)
                     revert(0x00, 0x60)
                 }
