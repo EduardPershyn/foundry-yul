@@ -120,7 +120,6 @@ contract ERC1155Test is DSTestPlus, ERC1155TokenReceiver {
         uint256 id,
         uint256 amount
     );
-
     event TransferBatch(
         address indexed operator,
         address indexed from,
@@ -128,6 +127,7 @@ contract ERC1155Test is DSTestPlus, ERC1155TokenReceiver {
         uint256[] ids,
         uint256[] amounts
     );
+    event ApprovalForAll(address indexed owner, address indexed operator, bool approved);
 
     YulDeployer yulDeployer = new YulDeployer();
     MockERC1155 token;
@@ -265,11 +265,14 @@ contract ERC1155Test is DSTestPlus, ERC1155TokenReceiver {
         assertEq(token.balanceOf(address(0xBEEF), 1341), 250);
     }
 
-//    function testApproveAll() public {
-//        token.setApprovalForAll(address(0xBEEF), true);
-//
-//        assertTrue(token.isApprovedForAll(address(this), address(0xBEEF)));
-//    }
+    function testApproveAll() public {
+        hevm.expectEmit(true, true, true, true);
+        emit ApprovalForAll(address(this), address(0xBEEF), true);
+
+        token.setApprovalForAll(address(0xBEEF), true);
+
+        assertTrue(token.isApprovedForAll(address(this), address(0xBEEF)));
+    }
 //
 //    function testSafeTransferFromToEOA() public {
 //        address from = address(0xABCD);

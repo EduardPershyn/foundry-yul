@@ -16,7 +16,6 @@ object "ERC1155Yul" {
                 returnUint(balanceOf(decodeAsAddress(0), decodeAsUint(1)))
             }
             case 0x4e1273f4 /* "balanceOfBatch(address[] calldata, uint256[] calldata)" */ {
-                //returnArray(balanceOfBatch(decodeAsCdArray(0), decodeAsCdArray(1)))
                 balanceOfBatch(decodeAsCdArray(0), decodeAsCdArray(1))
             }
             case 0x731133e9 /* "mint(address,uint256,uint256,bytes)" */ {
@@ -35,6 +34,13 @@ object "ERC1155Yul" {
             case 0xf6eb127a /* "batchBurn(address,uint256[] memory,uint256[] memory)" */ {
                 let ids, amounts := decodeTwoMemArrays(1, 2)
                 batchBurn(decodeAsAddress(0), ids, amounts)
+                returnEmpty()
+            }
+            case 0xe985e9c5 /* "isApprovedForAll(address, address)" */ {
+                returnUint(isApprovedForAll(decodeAsAddress(0), decodeAsAddress(1)))
+            }
+            case 0xa22cb465 /* "setApprovalForAll(address, bool)" */ {
+                setApprovalForAll(decodeAsAddress(0), decodeAsUint(1))
                 returnEmpty()
             }
             default {
@@ -116,6 +122,14 @@ object "ERC1155Yul" {
                 }
 
                 emitTransferBatch(caller(), from, 0x0, ids, amounts)
+            }
+            function isApprovedForAll(owner, operator) -> b {
+                b := sload(isApprovedStorageOffset(owner, operator))
+            }
+            function setApprovalForAll(operator, approved) {
+                sstore(isApprovedStorageOffset(caller(), operator), approved)
+
+                emitApprovalForAll(caller(), operator, approved)
             }
 
             /* ---------- memory operations functions ----------- */
@@ -216,15 +230,32 @@ object "ERC1155Yul" {
                 log4(ids, memSize, signatureHash, operator, from, to)
                 mstore(amounts, amountsDataPos) //restore memory
             }
+            function emitApprovalForAll(owner, operator, approved) {
+                // cast sig-event "ApprovalForAll(address indexed owner, address indexed operator, bool approved)"
+                let signatureHash := 0x17307eab39ab6107e8899845ad3d59bd9653f200f220920489ca2b5937696c31
+
+                mstore(0x00, approved)
+                log3(0, 0x20, signatureHash, owner, operator)
+            }
 
             /* -------- storage layout ---------- */
             function balancePos() -> p { p := 0 }
+            function isApprovedPos() -> p { p := 1 }
             function balanceStorageOffset(account, id) -> offset {
                 mstore(0, account)
                 mstore(0x20, balancePos())
                 let key := keccak256(0, 0x40)
 
                 mstore(0, id)
+                mstore(0x20, key)
+                offset := keccak256(0, 0x40)
+            }
+            function isApprovedStorageOffset(account, operator) -> offset {
+                mstore(0, account)
+                mstore(0x20, isApprovedPos())
+                let key := keccak256(0, 0x40)
+
+                mstore(0, operator)
                 mstore(0x20, key)
                 offset := keccak256(0, 0x40)
             }
