@@ -52,6 +52,10 @@ object "ERC1155Yul" {
                 safeBatchTransferFrom(decodeAsAddress(0), decodeAsAddress(1), ids, amounts, decodeAsByteArray(4))
                 returnEmpty()
             }
+            //case 0x0e89341c /* "uri(uint256 id)" */ {
+            case 0x0623b787 /* "uriTest(uint256 id)" */ {
+                uri(decodeAsUint(0))
+            }
             default {
                 revert(0, 0)
             }
@@ -186,6 +190,34 @@ object "ERC1155Yul" {
                 if iszero(eq(extcodesize(to), 0)) {
                     transferBatchHook(caller(), from, to, ids, amounts, data)
                 }
+            }
+            function uri(id) {
+                //cast --from-utf8 "ipfs://QmUzSR5yBqtsjnzfvfFZWe2JyEryhm7UgUfhKr9pkokG7C/"
+                let mes1part := 0x697066733a2f2f516d557a53523579427174736a6e7a667666465a5765324a79
+                let mes2part := 0x457279686d3755675566684b7239706b6f6b4737432f00000000000000000000
+
+                // Count 'id' bytes
+                let idLen := 0
+                let shiftedId := id
+                for {} iszero(eq(shiftedId, 0)) {} {
+                    shiftedId := shr(8, shiftedId)
+                    idLen := add(idLen, 1)
+                }
+
+                let freeMPtr := mload(0x40)
+                let messageSize := add(0x36, idLen)
+                mstore(add(freeMPtr, 0x00), 0x20)
+                mstore(add(freeMPtr, 0x20), messageSize)
+                mstore(add(freeMPtr, 0x40), mes1part)
+                mstore(add(freeMPtr, 0x60), mes2part)
+
+                //TODO to represent int in string, make conversion - 0539 -> 31 33 33 37
+                mstore(add(freeMPtr, 0x76), shl( mul(sub(0x20,idLen),8), id ) )
+
+                // TODO emit will revert if uri is view (executed from static context)
+                emitUri(freeMPtr, add(messageSize, 0x40), id)
+
+                return(freeMPtr, add(messageSize, 0x40))
             }
 
             /* ---------- transfer hooks ----------- */
@@ -395,6 +427,12 @@ object "ERC1155Yul" {
 
                 mstore(0x00, approved)
                 log3(0, 0x20, signatureHash, owner, operator)
+            }
+            function emitUri(valueMemStart, valueMemSize, id) {
+                // cast sig-event "URI(string value, uint256 indexed id)"
+                let signatureHash := 0x6bb7ff708619ba0610cba295a58592e0451dee2622938c8755667688daf3529b
+
+                log2(valueMemStart, valueMemSize, signatureHash, id)
             }
 
             /* -------- storage layout ---------- */

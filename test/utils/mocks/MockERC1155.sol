@@ -5,6 +5,7 @@ import "../../../lib/solmate/src/tokens/ERC1155.sol";
 
 contract MockERC1155 is ERC1155 {
     function uri(uint256) public pure virtual override returns (string memory) {}
+    function uriTest(uint256) public returns (string memory) {}
 
     function mint(
         address to,

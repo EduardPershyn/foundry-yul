@@ -140,6 +140,12 @@ contract ERC1155Test is DSTestPlus, ERC1155TokenReceiver {
         token = MockERC1155(yulDeployer.deployContract("ERC1155Yul"));
     }
 
+    function testUri() public {
+        //string memory uri = token.uri(0);
+        string memory uri = token.uriTest(1337);
+        console.log(uri);
+    }
+
     function testMintToEOA() public {
         hevm.expectEmit(true, true, true, true);
         emit TransferSingle(address(this), address(0x00), address(0xBEEF), 1337, 1);
