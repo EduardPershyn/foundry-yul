@@ -116,6 +116,10 @@ object "ERC1155Yul" {
                 }
 
                 emitTransferBatch(caller(), 0x0, to, ids, amounts)
+
+                if iszero(eq(extcodesize(to), 0)) {
+                    transferBatchHook(caller(), 0x0, to, ids, amounts, data)
+                }
             }
             function batchBurn(from, ids, amounts) {
                 require(iszero(eq(from, 0x00)))
@@ -178,6 +182,10 @@ object "ERC1155Yul" {
                 }
 
                 emitTransferBatch(caller(), from, to, ids, amounts)
+
+                if iszero(eq(extcodesize(to), 0)) {
+                    transferBatchHook(caller(), from, to, ids, amounts, data)
+                }
             }
 
             /* ---------- transfer hooks ----------- */
@@ -212,7 +220,49 @@ object "ERC1155Yul" {
 
                 requireRecipient( eq(mload(0x00), 0xf23a6e61) )
             }
+            function transferBatchHook(operator, from, to, ids, amounts, data) {
+                //cast sig "onERC1155BatchReceived(address, address, uint256[], uint256[], bytes calldata)"
+                //cast --to-bytes32 0xbc197c81
+                let rightPadSig := 0xbc197c8100000000000000000000000000000000000000000000000000000000
 
+                let freeMPtr := mload(0x40)
+
+                mstore(freeMPtr, rightPadSig)
+                mstore(add(freeMPtr, 0x04), operator)
+                mstore(add(freeMPtr, 0x24), from)
+
+                //Store first array
+                let memPtr := add(freeMPtr, 0xA4)
+                mstore(add(freeMPtr, 0x44), sub( sub(memPtr, 4), freeMPtr ))
+                memPtr := copyMemArray(add(ids, mload(ids)), memPtr)
+
+                //Store second array
+                memPtr := add(memPtr, 0x20)
+                mstore(add(freeMPtr, 0x64), sub( sub(memPtr, 4), freeMPtr ))
+                memPtr := copyMemArray(add(amounts, mload(amounts)), memPtr)
+
+                //Store byte array
+                memPtr := add(memPtr, 0x20)
+                mstore(add(freeMPtr, 0x84), sub( sub(memPtr, 4), freeMPtr ))
+
+                let bytes32Count := countBytes32(data)
+                let bytesDataLength := add( 0x20, mul(bytes32Count, 0x20) )
+                calldatacopy( memPtr, data, bytesDataLength ) //copy data to memory
+
+                mstore(0x00, 0x00) //clear first mem slot so return data be precise
+
+                require(
+                call(gas(),
+                     to,
+                     0,
+                     freeMPtr,
+                     add(sub(memPtr,freeMPtr), bytesDataLength),
+                     0x1c,
+                     4
+                ))
+
+                requireRecipient( eq(mload(0x00), 0xbc197c81) )
+            }
 
             /* ---------- memory operations functions ----------- */
             function initMemArray(length) -> freeMPtr, arrayMemSize {
@@ -222,6 +272,17 @@ object "ERC1155Yul" {
 
                 arrayMemSize := add(0x40, mul(0x20, length))
                 mstore(0x40, add(freeMPtr, arrayMemSize))         //update freeMemPtr
+            }
+            function copyMemArray(from, to) -> memPtr {
+                let fromL := mload(from)
+                mstore(to, fromL)
+                for { let i := 0 } lt(i, fromL) { i := add(i, 1) }
+                {
+                    from := add(from, 0x20)
+                    to := add(to, 0x20)
+                    mstore(to, mload(from))
+                }
+                memPtr := to
             }
 
             /* ---------- calldata decoding functions ----------- */
