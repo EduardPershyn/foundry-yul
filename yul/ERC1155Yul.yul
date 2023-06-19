@@ -19,7 +19,7 @@ object "ERC1155Yul" {
                 balanceOfBatch(decodeAsCdArray(0), decodeAsCdArray(1))
             }
             case 0x731133e9 /* "mint(address,uint256,uint256,bytes)" */ {
-                mint(decodeAsAddress(0), decodeAsUint(1), decodeAsUint(2), decodeAsUint(3))
+                mint(decodeAsAddress(0), decodeAsUint(1), decodeAsUint(2), decodeAsByteArray(3))
                 returnEmpty()
             }
             case 0xf5298aca /* "burn(address, uint256, uint256)" */ {
@@ -28,7 +28,7 @@ object "ERC1155Yul" {
             }
             case 0xb48ab8b6 /* "batchMint(address,uint256[] memory,uint256[] memory,bytes memory)" */ {
                 let ids, amounts := decodeTwoMemArrays(1, 2)
-                batchMint(decodeAsAddress(0), ids, amounts, decodeAsUint(3))
+                batchMint(decodeAsAddress(0), ids, amounts, decodeAsByteArray(3))
                 returnEmpty()
             }
             case 0xf6eb127a /* "batchBurn(address,uint256[] memory,uint256[] memory)" */ {
@@ -44,12 +44,12 @@ object "ERC1155Yul" {
                 returnEmpty()
             }
             case 0xf242432a /* "safeTransferFrom(address, address, uint256, uint256, bytes calldata)" */ {
-                safeTransferFrom(decodeAsAddress(0), decodeAsAddress(1), decodeAsUint(2), decodeAsUint(3), decodeAsUint(4))
+                safeTransferFrom(decodeAsAddress(0), decodeAsAddress(1), decodeAsUint(2), decodeAsUint(3), decodeAsByteArray(4))
                 returnEmpty()
             }
             case 0x2eb2c2d6 /* "safeBatchTransferFrom(address, address, uint256[] calldata, uint256[] calldata, bytes calldata)" */ {
                 let ids, amounts := decodeTwoMemArrays(2, 3)
-                safeBatchTransferFrom(decodeAsAddress(0), decodeAsAddress(1), ids, amounts, decodeAsUint(4))
+                safeBatchTransferFrom(decodeAsAddress(0), decodeAsAddress(1), ids, amounts, decodeAsByteArray(4))
                 returnEmpty()
             }
             default {
@@ -88,6 +88,10 @@ object "ERC1155Yul" {
                 addToBalance(to, id, amount)
 
                 emitTransferSingle(caller(), 0x0, to, id, amount)
+
+                if iszero(eq(extcodesize(to), 0)) {
+                    transferHook(caller(), 0x0, to, id, amount, data)
+                }
             }
             function burn(from, id, amount) {
                 deductFromBalance(from, id, amount)
@@ -148,6 +152,10 @@ object "ERC1155Yul" {
                 addToBalance(to, id, amount)
 
                 emitTransferSingle(caller(), from, to, id, amount)
+
+                if iszero(eq(extcodesize(to), 0)) {
+                    transferHook(caller(), from, to, id, amount, data)
+                }
             }
             function safeBatchTransferFrom(from, to, ids, amounts, data) {
                 requireRecipient(iszero(eq(to, 0x00)))
@@ -171,6 +179,40 @@ object "ERC1155Yul" {
 
                 emitTransferBatch(caller(), from, to, ids, amounts)
             }
+
+            /* ---------- transfer hooks ----------- */
+            function transferHook(operator, from, to, id, amount, data) {
+                //cast sig "onERC1155Received(address, address, uint256, uint256, bytes calldata)"
+                //cast --to-bytes32 0xf23a6e61
+                let rightPadSig := 0xf23a6e6100000000000000000000000000000000000000000000000000000000
+
+                let freeMPtr := mload(0x40)
+
+                mstore(freeMPtr, rightPadSig)
+                mstore(add(freeMPtr, 0x04), operator)
+                mstore(add(freeMPtr, 0x24), from)
+                mstore(add(freeMPtr, 0x44), id)
+                mstore(add(freeMPtr, 0x64), amount)
+                mstore(add(freeMPtr, 0x84), 0xA0)  //data offset
+
+                let bytes32Count := countBytes32(data)
+                calldatacopy(add(freeMPtr, 0xA4), data, add( 0x20, mul(bytes32Count, 0x20) )) //copy data to memory
+
+                mstore(0x00, 0x00) //clear first mem slot so return data be presize
+
+                require(
+                call(gas(),
+                     to,
+                     0,
+                     freeMPtr,
+                     add(0xC4, mul(bytes32Count, 0x20)),
+                     0x1c,
+                     4
+                ))
+
+                requireRecipient( eq(mload(0x00), 0xf23a6e61) )
+            }
+
 
             /* ---------- memory operations functions ----------- */
             function initMemArray(length) -> freeMPtr, arrayMemSize {
@@ -198,6 +240,22 @@ object "ERC1155Yul" {
                     revert(0, 0)
                 }
                 v := calldataload(pos)
+            }
+            function decodeAsByteArray(offset) -> arrayPos {
+                let parPos := add(4, mul(offset, 0x20))
+                arrayPos := add(4, calldataload(parPos))
+                let bytes32Count := countBytes32(arrayPos)
+
+                if lt(calldatasize(), add(add(arrayPos, 0x20), mul(bytes32Count, 0x20))) {
+                    revert(0, 0)
+                }
+            }
+            function countBytes32(bytes) -> count {
+                let dataLen := calldataload(bytes)
+                count := div(dataLen, 0x20)
+                if iszero( eq(mod(dataLen,0x20),0) )  {
+                    count := add(count, 1)
+                }
             }
             function decodeAsCdArray(offset) -> arrayPos {
                 let parPos := add(4, mul(offset, 0x20))
